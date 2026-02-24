@@ -38,75 +38,6 @@ INLINE vuint32m1_t rot7(vuint32m1_t x, size_t vl) {
                                __riscv_vsll_vx_u32m1(x, 25, vl), vl);
 }
 
-// Transpose 4x4 matrix of uint32_t vectors
-// Input: vecs[0-3] where each vec contains 4 elements
-// After transpose: vecs[i][j] becomes vecs[j][i]
-INLINE void transpose_vecs_rvv(vuint32m1_t vecs[4], size_t vl) {
-  // Use scalar code for simplicity and correctness
-  // TODO: optimize with vrgather if this becomes a bottleneck
-  uint32_t temp[4][4];
-  
-  // Extract to temporary array
-  __riscv_vse32_v_u32m1(temp[0], vecs[0], vl);
-  __riscv_vse32_v_u32m1(temp[1], vecs[1], vl);
-  __riscv_vse32_v_u32m1(temp[2], vecs[2], vl);
-  __riscv_vse32_v_u32m1(temp[3], vecs[3], vl);
-  
-  // Transpose in place
-  uint32_t transposed[4][4];
-  for (size_t i = 0; i < vl && i < 4; i++) {
-    for (size_t j = 0; j < 4; j++) {
-      transposed[i][j] = temp[j][i];
-    }
-  }
-  
-  // Load back
-  vecs[0] = __riscv_vle32_v_u32m1(transposed[0], vl);
-  vecs[1] = __riscv_vle32_v_u32m1(transposed[1], vl);
-  vecs[2] = __riscv_vle32_v_u32m1(transposed[2], vl);
-  vecs[3] = __riscv_vle32_v_u32m1(transposed[3], vl);
-}
-
-// Load and transpose message vectors using unit stride loads
-// This replaces indexed loads with unit stride loads + transpose
-INLINE void transpose_msg_vecs_rvv(const uint8_t *const *inputs,
-                                    size_t block_offset,
-                                    vuint32m1_t out[16],
-                                    size_t vl) {
-  // Load message words 0-3 from each input, then transpose
-  vuint32m1_t rows[4];
-  rows[0] = __riscv_vle32_v_u32m1((const uint32_t*)&inputs[0][block_offset + 0], vl);
-  rows[1] = __riscv_vle32_v_u32m1((const uint32_t*)&inputs[1][block_offset + 0], vl);
-  rows[2] = __riscv_vle32_v_u32m1((const uint32_t*)&inputs[2][block_offset + 0], vl);
-  rows[3] = __riscv_vle32_v_u32m1((const uint32_t*)&inputs[3][block_offset + 0], vl);
-  transpose_vecs_rvv(rows, vl);
-  out[0] = rows[0]; out[1] = rows[1]; out[2] = rows[2]; out[3] = rows[3];
-  
-  // Load message words 4-7
-  rows[0] = __riscv_vle32_v_u32m1((const uint32_t*)&inputs[0][block_offset + 16], vl);
-  rows[1] = __riscv_vle32_v_u32m1((const uint32_t*)&inputs[1][block_offset + 16], vl);
-  rows[2] = __riscv_vle32_v_u32m1((const uint32_t*)&inputs[2][block_offset + 16], vl);
-  rows[3] = __riscv_vle32_v_u32m1((const uint32_t*)&inputs[3][block_offset + 16], vl);
-  transpose_vecs_rvv(rows, vl);
-  out[4] = rows[0]; out[5] = rows[1]; out[6] = rows[2]; out[7] = rows[3];
-  
-  // Load message words 8-11
-  rows[0] = __riscv_vle32_v_u32m1((const uint32_t*)&inputs[0][block_offset + 32], vl);
-  rows[1] = __riscv_vle32_v_u32m1((const uint32_t*)&inputs[1][block_offset + 32], vl);
-  rows[2] = __riscv_vle32_v_u32m1((const uint32_t*)&inputs[2][block_offset + 32], vl);
-  rows[3] = __riscv_vle32_v_u32m1((const uint32_t*)&inputs[3][block_offset + 32], vl);
-  transpose_vecs_rvv(rows, vl);
-  out[8] = rows[0]; out[9] = rows[1]; out[10] = rows[2]; out[11] = rows[3];
-  
-  // Load message words 12-15
-  rows[0] = __riscv_vle32_v_u32m1((const uint32_t*)&inputs[0][block_offset + 48], vl);
-  rows[1] = __riscv_vle32_v_u32m1((const uint32_t*)&inputs[1][block_offset + 48], vl);
-  rows[2] = __riscv_vle32_v_u32m1((const uint32_t*)&inputs[2][block_offset + 48], vl);
-  rows[3] = __riscv_vle32_v_u32m1((const uint32_t*)&inputs[3][block_offset + 48], vl);
-  transpose_vecs_rvv(rows, vl);
-  out[12] = rows[0]; out[13] = rows[1]; out[14] = rows[2]; out[15] = rows[3];
-}
-
 INLINE void g(vuint32m1_t *a, vuint32m1_t *b, vuint32m1_t *c, vuint32m1_t *d,
               vuint32m1_t mx, vuint32m1_t my, size_t vl) {
   *a = add(*a, add(*b, mx, vl), vl);
@@ -203,28 +134,55 @@ INLINE void blake3_hash_vl_rvv(const uint8_t *const *inputs, size_t vl,
       block_flags |= flags_end;
     }
 
-    // Load message words using unit stride loads + transpose
-    // This replaces indexed loads for better cache locality
+    // Load message words using scalar loads + unit stride vector load
+    // This replaces indexed loads to test if it's faster
     size_t offset = block * BLAKE3_BLOCK_LEN;
-    vuint32m1_t msg_vecs[16];
-    transpose_msg_vecs_rvv(inputs, offset, msg_vecs, vl);
+    const uint32_t *input_ptrs[16];
+    for (size_t i = 0; i < vl && i < 16; i++) {
+      input_ptrs[i] = (const uint32_t *)&inputs[i][offset];
+    }
     
-    vuint32m1_t m0 = msg_vecs[0];
-    vuint32m1_t m1 = msg_vecs[1];
-    vuint32m1_t m2 = msg_vecs[2];
-    vuint32m1_t m3 = msg_vecs[3];
-    vuint32m1_t m4 = msg_vecs[4];
-    vuint32m1_t m5 = msg_vecs[5];
-    vuint32m1_t m6 = msg_vecs[6];
-    vuint32m1_t m7 = msg_vecs[7];
-    vuint32m1_t m8 = msg_vecs[8];
-    vuint32m1_t m9 = msg_vecs[9];
-    vuint32m1_t m10 = msg_vecs[10];
-    vuint32m1_t m11 = msg_vecs[11];
-    vuint32m1_t m12 = msg_vecs[12];
-    vuint32m1_t m13 = msg_vecs[13];
-    vuint32m1_t m14 = msg_vecs[14];
-    vuint32m1_t m15 = msg_vecs[15];
+    // Load each message word using scalar loads, then create vectors
+    uint32_t m0_vals[16], m1_vals[16], m2_vals[16], m3_vals[16];
+    uint32_t m4_vals[16], m5_vals[16], m6_vals[16], m7_vals[16];
+    uint32_t m8_vals[16], m9_vals[16], m10_vals[16], m11_vals[16];
+    uint32_t m12_vals[16], m13_vals[16], m14_vals[16], m15_vals[16];
+    
+    for (size_t i = 0; i < vl && i < 16; i++) {
+      m0_vals[i] = input_ptrs[i][0];
+      m1_vals[i] = input_ptrs[i][1];
+      m2_vals[i] = input_ptrs[i][2];
+      m3_vals[i] = input_ptrs[i][3];
+      m4_vals[i] = input_ptrs[i][4];
+      m5_vals[i] = input_ptrs[i][5];
+      m6_vals[i] = input_ptrs[i][6];
+      m7_vals[i] = input_ptrs[i][7];
+      m8_vals[i] = input_ptrs[i][8];
+      m9_vals[i] = input_ptrs[i][9];
+      m10_vals[i] = input_ptrs[i][10];
+      m11_vals[i] = input_ptrs[i][11];
+      m12_vals[i] = input_ptrs[i][12];
+      m13_vals[i] = input_ptrs[i][13];
+      m14_vals[i] = input_ptrs[i][14];
+      m15_vals[i] = input_ptrs[i][15];
+    }
+    
+    vuint32m1_t m0 = __riscv_vle32_v_u32m1(m0_vals, vl);
+    vuint32m1_t m1 = __riscv_vle32_v_u32m1(m1_vals, vl);
+    vuint32m1_t m2 = __riscv_vle32_v_u32m1(m2_vals, vl);
+    vuint32m1_t m3 = __riscv_vle32_v_u32m1(m3_vals, vl);
+    vuint32m1_t m4 = __riscv_vle32_v_u32m1(m4_vals, vl);
+    vuint32m1_t m5 = __riscv_vle32_v_u32m1(m5_vals, vl);
+    vuint32m1_t m6 = __riscv_vle32_v_u32m1(m6_vals, vl);
+    vuint32m1_t m7 = __riscv_vle32_v_u32m1(m7_vals, vl);
+    vuint32m1_t m8 = __riscv_vle32_v_u32m1(m8_vals, vl);
+    vuint32m1_t m9 = __riscv_vle32_v_u32m1(m9_vals, vl);
+    vuint32m1_t m10 = __riscv_vle32_v_u32m1(m10_vals, vl);
+    vuint32m1_t m11 = __riscv_vle32_v_u32m1(m11_vals, vl);
+    vuint32m1_t m12 = __riscv_vle32_v_u32m1(m12_vals, vl);
+    vuint32m1_t m13 = __riscv_vle32_v_u32m1(m13_vals, vl);
+    vuint32m1_t m14 = __riscv_vle32_v_u32m1(m14_vals, vl);
+    vuint32m1_t m15 = __riscv_vle32_v_u32m1(m15_vals, vl);
 
     vuint32m1_t v0 = h0;
     vuint32m1_t v1 = h1;
@@ -270,24 +228,31 @@ INLINE void blake3_hash_vl_rvv(const uint8_t *const *inputs, size_t vl,
     block_flags = flags;
   }
 
-  // Transpose and store output using unit stride stores
-  // This replaces strided stores for better performance
-  vuint32m1_t h_vecs_low[4] = {h0, h1, h2, h3};
-  vuint32m1_t h_vecs_high[4] = {h4, h5, h6, h7};
-  transpose_vecs_rvv(h_vecs_low, vl);
-  transpose_vecs_rvv(h_vecs_high, vl);
+  // Store output using scalar stores
+  // This replaces strided stores to test if it's faster
+  uint32_t h0_vals[16], h1_vals[16], h2_vals[16], h3_vals[16];
+  uint32_t h4_vals[16], h5_vals[16], h6_vals[16], h7_vals[16];
   
-  // After transpose, h_vecs_low[i] contains first 4 words of output i
-  // and h_vecs_high[i] contains last 4 words of output i
-  // Output layout: [out0_low, out0_high, out1_low, out1_high, ...]
-  __riscv_vse32_v_u32m1((uint32_t *)&out[0 * 16], h_vecs_low[0], vl);
-  __riscv_vse32_v_u32m1((uint32_t *)&out[1 * 16], h_vecs_high[0], vl);
-  __riscv_vse32_v_u32m1((uint32_t *)&out[2 * 16], h_vecs_low[1], vl);
-  __riscv_vse32_v_u32m1((uint32_t *)&out[3 * 16], h_vecs_high[1], vl);
-  __riscv_vse32_v_u32m1((uint32_t *)&out[4 * 16], h_vecs_low[2], vl);
-  __riscv_vse32_v_u32m1((uint32_t *)&out[5 * 16], h_vecs_high[2], vl);
-  __riscv_vse32_v_u32m1((uint32_t *)&out[6 * 16], h_vecs_low[3], vl);
-  __riscv_vse32_v_u32m1((uint32_t *)&out[7 * 16], h_vecs_high[3], vl);
+  __riscv_vse32_v_u32m1(h0_vals, h0, vl);
+  __riscv_vse32_v_u32m1(h1_vals, h1, vl);
+  __riscv_vse32_v_u32m1(h2_vals, h2, vl);
+  __riscv_vse32_v_u32m1(h3_vals, h3, vl);
+  __riscv_vse32_v_u32m1(h4_vals, h4, vl);
+  __riscv_vse32_v_u32m1(h5_vals, h5, vl);
+  __riscv_vse32_v_u32m1(h6_vals, h6, vl);
+  __riscv_vse32_v_u32m1(h7_vals, h7, vl);
+  
+  for (size_t i = 0; i < vl && i < 16; i++) {
+    uint32_t *out_ptr = (uint32_t *)&out[i * BLAKE3_OUT_LEN];
+    out_ptr[0] = h0_vals[i];
+    out_ptr[1] = h1_vals[i];
+    out_ptr[2] = h2_vals[i];
+    out_ptr[3] = h3_vals[i];
+    out_ptr[4] = h4_vals[i];
+    out_ptr[5] = h5_vals[i];
+    out_ptr[6] = h6_vals[i];
+    out_ptr[7] = h7_vals[i];
+  }
 }
 
 void blake3_hash_many_rvv(const uint8_t *const *inputs, size_t num_inputs,
