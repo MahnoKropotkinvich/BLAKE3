@@ -223,6 +223,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         neon_build.compile("blake3_neon");
     }
 
+    if defined("CARGO_FEATURE_RVV") {
+        let mut rvv_build = new_build();
+        rvv_build.file(c_dir_path("blake3_rvv.c"));
+        rvv_build.compile("blake3_rvv");
+    }
+
     // The `cc` crate does not automatically emit rerun-if directives for the
     // environment variables it supports, in particular for $CC. We expect to
     // do a lot of benchmarking across different compilers, so we explicitly

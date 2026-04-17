@@ -6,38 +6,46 @@ void blake3_compress_in_place_portable(uint32_t cv[8],
                                        uint8_t block_len, uint64_t counter,
                                        uint8_t flags);
 
+__attribute__((target("arch=+v")))
 INLINE vuint32m1_t add(vuint32m1_t a, vuint32m1_t b, size_t vl) {
   return __riscv_vadd_vv_u32m1(a, b, vl);
 }
 
+__attribute__((target("arch=+v")))
 INLINE vuint32m1_t xor(vuint32m1_t a, vuint32m1_t b, size_t vl) {
   return __riscv_vxor_vv_u32m1(a, b, vl);
 }
 
+__attribute__((target("arch=+v")))
 INLINE vuint32m1_t set1(uint32_t x, size_t vl) {
   return __riscv_vmv_v_x_u32m1(x, vl);
 }
 
+__attribute__((target("arch=+v")))
 INLINE vuint32m1_t rot16(vuint32m1_t x, size_t vl) {
   return __riscv_vor_vv_u32m1(__riscv_vsrl_vx_u32m1(x, 16, vl),
                                __riscv_vsll_vx_u32m1(x, 16, vl), vl);
 }
 
+__attribute__((target("arch=+v")))
 INLINE vuint32m1_t rot12(vuint32m1_t x, size_t vl) {
   return __riscv_vor_vv_u32m1(__riscv_vsrl_vx_u32m1(x, 12, vl),
                                __riscv_vsll_vx_u32m1(x, 20, vl), vl);
 }
 
+__attribute__((target("arch=+v")))
 INLINE vuint32m1_t rot8(vuint32m1_t x, size_t vl) {
   return __riscv_vor_vv_u32m1(__riscv_vsrl_vx_u32m1(x, 8, vl),
                                __riscv_vsll_vx_u32m1(x, 24, vl), vl);
 }
 
+__attribute__((target("arch=+v")))
 INLINE vuint32m1_t rot7(vuint32m1_t x, size_t vl) {
   return __riscv_vor_vv_u32m1(__riscv_vsrl_vx_u32m1(x, 7, vl),
                                __riscv_vsll_vx_u32m1(x, 25, vl), vl);
 }
 
+__attribute__((target("arch=+v")))
 INLINE void g(vuint32m1_t *a, vuint32m1_t *b, vuint32m1_t *c, vuint32m1_t *d,
               vuint32m1_t mx, vuint32m1_t my, size_t vl) {
   *a = add(*a, add(*b, mx, vl), vl);
@@ -50,6 +58,7 @@ INLINE void g(vuint32m1_t *a, vuint32m1_t *b, vuint32m1_t *c, vuint32m1_t *d,
   *b = rot7(xor(*b, *c, vl), vl);
 }
 
+__attribute__((target("arch=+v")))
 INLINE vuint32m1_t get_msg(vuint32m1_t m0, vuint32m1_t m1, vuint32m1_t m2, vuint32m1_t m3,
                             vuint32m1_t m4, vuint32m1_t m5, vuint32m1_t m6, vuint32m1_t m7,
                             vuint32m1_t m8, vuint32m1_t m9, vuint32m1_t m10, vuint32m1_t m11,
@@ -75,6 +84,7 @@ INLINE vuint32m1_t get_msg(vuint32m1_t m0, vuint32m1_t m1, vuint32m1_t m2, vuint
   }
 }
 
+__attribute__((target("arch=+v")))
 INLINE void round_fn(vuint32m1_t *v0, vuint32m1_t *v1, vuint32m1_t *v2, vuint32m1_t *v3,
                      vuint32m1_t *v4, vuint32m1_t *v5, vuint32m1_t *v6, vuint32m1_t *v7,
                      vuint32m1_t *v8, vuint32m1_t *v9, vuint32m1_t *v10, vuint32m1_t *v11,
@@ -103,6 +113,7 @@ INLINE void round_fn(vuint32m1_t *v0, vuint32m1_t *v1, vuint32m1_t *v2, vuint32m
 }
 
 // Hash vl inputs in parallel using RVV
+__attribute__((target("arch=+v")))
 INLINE void blake3_hash_vl_rvv(const uint8_t *const *inputs, size_t vl,
                                 size_t blocks, const uint32_t key[8],
                                 uint64_t counter, bool increment_counter,
@@ -259,6 +270,7 @@ INLINE void blake3_hash_vl_rvv(const uint8_t *const *inputs, size_t vl,
   __riscv_vsse32_v_u32m1((uint32_t *)&out[7 * 4], out_stride, h7, vl);
 }
 
+__attribute__((target("arch=+v")))
 void blake3_hash_many_rvv(const uint8_t *const *inputs, size_t num_inputs,
                           size_t blocks, const uint32_t key[8],
                           uint64_t counter, bool increment_counter,
@@ -305,6 +317,7 @@ void blake3_hash_many_rvv(const uint8_t *const *inputs, size_t num_inputs,
   }
 }
 
+__attribute__((target("arch=+v")))
 size_t blake3_rvv_simd_degree(void) {
   return __riscv_vsetvlmax_e32m1();
 }
