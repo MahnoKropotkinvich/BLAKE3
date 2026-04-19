@@ -110,6 +110,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     if cfg!(feature = "tbb") {
         base_build.define("BLAKE3_USE_TBB", "1");
     }
+    if cfg!(feature = "rvv") {
+        base_build.define("BLAKE3_USE_RVV", "1");
+    }
     base_build.compile("blake3_base");
 
     if cfg!(feature = "tbb") {
